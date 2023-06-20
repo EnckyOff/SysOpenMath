@@ -4,7 +4,8 @@ JULIA_LTS=1.6.7
 JULIA_LATEST=1.9
 JULIA_OLD=""
 SKIP_CONFIRM=0
-#JULIA_SCRIPT_URL= $(curl )
+JQ_INSTALLED=1
+JULIA_DOCS_URL=https://github.com/EnckyOff/JuliaInstaller/blob/master/JuliaRussianGuide.pdf
 function usage() {
   echo " Справка по installer.sh
 
@@ -14,17 +15,47 @@ Options and arguments:
   -h, --help               : Показать справку
   --lts                    : Установить LTS версию ($JULIA_LTS)
   --l                      : Получить список доступных для установки версий
-  --ver                     : Указать версию для установки
+  --ver                    : Указать версию для установки
 
   Директория в которую будет загружен и распакован архив .tar.gz:
-    По умолчанию /opt/julias при запуске с правами суперпользователя или $HOME/packages/julias при запуске без них .
+    По умолчанию /opt/julias при запуске с правами суперпользователя или $HOME/packages/julias при запуске без них.
   Директория в которую будет установлена символьная ссылка на julia.
-    По умолчанию при запуске с правами суперпользователя /usr/local/bin, иначе $HOME/.local/bin .
+    По умолчанию при запуске с правами суперпользователя /usr/local/bin, иначе $HOME/.local/bin.
 "
 }
 
-#function install_jq(){
-#}
+function install_jq(){
+sudo apt install jq
+}
+
+function delete_jq(){
+  if [[ "$JQ_INSTALLED" -eq 0 ]]; then
+  echo "Удаляем jq"
+  sudo apt remove jq
+  fi
+}
+
+function package_installer(){
+  exec julia installer.jl
+}
+
+function jupyter_install() { # посмотреть можно ли собирать jupyter из исходников
+if ! [[ -x "$(command -v jupyter notebook --ver)" ]]; then
+    echo "устанавливаем Jupyter"
+    pip install notebook
+fi
+}
+
+function docs_link_to_desktop(){ # Написать исправить баг с рабочим столом русскогоязычного пользователя
+read -p "Создать ссылку на документацию на рабочем столе? (Y/N) " -n 1 -r
+   echo
+   if [[  $REPLY =~ ^[Yy] ]]; then
+    wget -q $JULIA_DOCS_URL
+    path=$(command pwd)
+    ln -s $path/JuliaRussianGuide.pdf /home/$USER/Desktop
+    fi
+    return
+}
 
 
 function get_list_releases() {
@@ -34,6 +65,7 @@ function get_list_releases() {
   do
   echo "$i"
   done
+  return
 }
 
 while [[ $# -gt 0 ]]
@@ -56,14 +88,22 @@ case $key in
       shift
       ;;
     --l)
-      if ! command -v jq --version &> /dev/null
+      if ! [ -x "$(command -v jq --version)" ]
       then
-        echo "флаг --v требует установленного jg."
-        exit 1
+        echo "флаг --l требует установленного jg."
+        echo
+        read -p "установить? При завершении установки jq будет удален (Y/N) " -n 1 -r
+        if [[  $REPLY =~ ^[Yy] ]]; then
+          install_jq
+          JQ_INSTALLED=0
+          fi
+      else
+        JQ_INSTALLED=1
+        get_list_releases
+        echo
       fi
-      get_list_releases
       shift
-      exit 0
+      exit 1
       ;;
     *)    # unknown
       echo "Неизвестный флаг: $1" >&2
@@ -123,9 +163,10 @@ function welcome() {
 function confirm() {
   read -p "Вы согласны? (Y/N) " -n 1 -r
   echo
-  if [[ ! $REPLY =~ ^[Yy] ]]; then
-     echo "Запускаю установку пакетов"
-    # exit 1
+  if [[  $REPLY =~ ^[Yy] ]]; then
+     install_julia_linux
+    else
+    exit 1
   fi
 }
 
@@ -209,14 +250,19 @@ function install_julia_linux() {
 
 welcome
 if [[ "$SKIP_CONFIRM" == "0" ]]; then
-    # if [[ "$julia --version" > /dev/null]]; then
-    confirm
-    exec julia installer.jl
+    if  [[ -x "$(command -v julia --version)" ]]; then
+    echo "Julia уже установлена"
+    else
+      confirm
+    fi
 fi
 
 unameOut="$(uname -s)"
 case "${unameOut}" in
-    Linux*) install_julia_linux ;;
+    Linux*) jupyter_install
+            delete_jq
+            package_installer
+            ;;
     *)
         echo "Unsupported platform $(unameOut)" >&2
         exit 1
