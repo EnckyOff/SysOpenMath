@@ -67,41 +67,6 @@ function jupyter_install(){
         #add_jupyter_to_PATH
 }
 
-function wolfram_engine_install(){
-  echo "Начинается установка Wolfram Engine"
-  read -r -p "Введите свой wolfram ID: " wolfram_id
-  read -r -s -p "Введите пароль: " wolfram_password
-  url="https://account.wolfram.com/dl/WolframEngine?version=14.0&platform=Linux&downloadManager=false&includesDocumentation=false"
-  url_wolframscript="https://account.wolfram.com/dl/WolframScript?version=14.0&platform=Linux&computerArchitecture=amd64&downloadManager=false&includesDocumentation=false"
-  jupyter_url="https://github.com/WolframResearch/WolframLanguageForJupyter.git"
-  mkdir .wolfram_installation_temp
-  git clone "$jupyter_url" .wolfram_installation_temp/
-  wget -O .wolfram_installation_temp/install_engine.sh "$url"
-  chmod +x .wolfram_installation_temp/install_engine.sh
-  bash .wolfram_installation_temp/install_engine.sh
-  if $(which wolframscript) &> /dev/null; then
-    wolframscript -activate "$wolfram_id" "$wolfram_password"
-  #else
-    #wget -O .wolfram_installation_temp/wolframscript_installer.deb "$url_wolframscript"
-    #dpkg -i wolframscript_installer.deb
-   # wolframscript -username "$wolfram_id" -password "$wolfram_password"
-  fi
- ./.wolfram_installation_temp/configure-jupyter.wls add
-  rm -rf .wolfram_installation_temp/
-   echo "Установка wolfram завершена!"
-}
-
-# function docs_link_to_desktop(){ # Написать исправить баг с рабочим столом русскогоязычного пользователя
-# read -p "Создать ссылку на документацию на рабочем столе? (Y/N) " -n 1 -r
-#    echo
-#    if [[  $REPLY =~ ^[Yy] ]]; then
-#     wget -q $JULIA_DOCS_URL
-#     path=$(command pwd)
-#     ln -s $path/JuliaRussianGuide.pdf /home/$USER/Desktop
-#     fi
-#     return
-# }
-
 
 function get_list_releases() {
   echo "Список доступных версий для установки:"
@@ -195,7 +160,6 @@ function welcome() {
   echo "  - попытается загрузить Julia '$version'"
   echo "  - Создаст символьную ссылку julia"
   echo "  - Установит Jupyter Notebook"
-  echo "  - Установит wolfram Engine для Jupyter"
   echo ""
   echo "Путь для загрузки Julia: ${JULIA_DOWNLOAD@Q}"
   echo "Путь для символьной ссылки Julia: ${JULIA_INSTALL@Q}"
@@ -217,13 +181,7 @@ function confirm_julia() {
      install_julia_linux
   fi
 }
-function confirm_wolfram() {
-  read -p "Вы согласны установить wolfram? (Y/N) " -n 1 -r
-  echo
-  if [[  $REPLY =~ ^[Yy] ]]; then
-     wolfram_engine_install
-  fi
-}
+
 
 
 function get_url_from_platform_arch_version() {
@@ -309,7 +267,6 @@ case "${unameOut}" in
           #jupyter_install
           delete_jq
           package_installer
-          confirm_wolfram
           ;;
   *) echo "Unsupported platform $(unameOut)" >&2
      exit 1
