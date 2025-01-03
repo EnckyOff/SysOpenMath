@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 
 JULIA_LTS=1.6.7
-JULIA_LATEST=1.9
+JULIA_LATEST=1.10
 JULIA_OLD=""
 SKIP_CONFIRM=0
-JQ_INSTALLED=1
-JULIA_DOCS_URL=https://github.com/EnckyOff/JuliaInstaller/blob/master/JuliaRussianGuide.pdf
+JQ_INSTALL=0
+WOLFRAM_INSTALL=0
+JULIA_DOCS_URL="https://github.com/EnckyOff/JuliaInstaller/blob/master/JuliaRussianGuide.pdf"
+
 function usage() {
   echo " Справка по installer.sh
 
 Скрипт устанавливает Julia. По умолчанию ставится последняя стабильная версия ($JULIA_LATEST-latest).
+
 
 Options and arguments:
   -h, --help               : Показать справку
@@ -18,9 +21,9 @@ Options and arguments:
   --ver                    : Указать версию для установки
 
   Директория в которую будет загружен и распакован архив .tar.gz:
-    По умолчанию /opt/julias при запуске с правами суперпользователя или $HOME/packages/julias при запуске без них.
+    По умолчанию /opt/julias
   Директория в которую будет установлена символьная ссылка на julia.
-    По умолчанию при запуске с правами суперпользователя /usr/local/bin, иначе $HOME/.local/bin.
+    По умолчанию при запуске /usr/local/bin.
 "
 }
 
@@ -28,34 +31,76 @@ function install_jq(){
 sudo apt install jq
 }
 
+function check_jq(){
+   if [ "$(jq --version)" == "1" ] &> /dev/null; then
+  JQ_INSTALL=1
+  fi
+}
+
 function delete_jq(){
-  if [[ "$JQ_INSTALLED" -eq 0 ]]; then
+  if [[ "$JQ_INSTALL" -eq 1 ]]; then
   echo "Удаляем jq"
   sudo apt remove jq
   fi
 }
 
 function package_installer(){
-  exec julia installer.jl
+  if [ "$(which julia)" == "0" ] &> /dev/null; then
+   bash julia package_installer.jl
+  fi
+}
+function add_jupyter_to_PATH(){
+  echo "Настраиваем пути Jupyter Notebook"
+  pipx_venv_path=$(pipx environment | grep "PIPX_LOCAL_VENVS" | cut -d "=" -f 2)
+  notebook_venv_path="$pipx_venv_path/notebook/bin"
+  echo "# Created by SystemOpenMath" >> ~/.bashrc
+  echo "export PATH=\"\$PATH:$notebook_venv_path\"" >> ~/.bashrc
 }
 
-function jupyter_install() { # посмотреть можно ли собирать jupyter из исходников
-if ! [[ -x "$(command -v jupyter notebook --ver)" ]]; then
-    echo "устанавливаем Jupyter"
-    pip install notebook
-fi
+
+function jupyter_install(){
+    # Сделать проверку есть ли Jupyter в PATH
+    # Сделать проверку, что существует ipython
+        echo "устанавливаем Jupyter notebook"
+        pipx install notebook --include-deps
+        echo "Добавляем пути"
+        #add_jupyter_to_PATH
 }
 
-function docs_link_to_desktop(){ # Написать исправить баг с рабочим столом русскогоязычного пользователя
-read -p "Создать ссылку на документацию на рабочем столе? (Y/N) " -n 1 -r
-   echo
-   if [[  $REPLY =~ ^[Yy] ]]; then
-    wget -q $JULIA_DOCS_URL
-    path=$(command pwd)
-    ln -s $path/JuliaRussianGuide.pdf /home/$USER/Desktop
-    fi
-    return
+function wolfram_engine_install(){
+  echo "Начинается установка Wolfram Engine"
+  read -r -p "Введите свой wolfram ID: " wolfram_id
+  read -r -s -p "Введите пароль: " wolfram_password
+  url="https://account.wolfram.com/dl/WolframEngine?version=14.0&platform=Linux&downloadManager=false&includesDocumentation=false"
+  url_wolframscript="https://account.wolfram.com/dl/WolframScript?version=14.0&platform=Linux&computerArchitecture=amd64&downloadManager=false&includesDocumentation=false"
+  jupyter_url="https://github.com/WolframResearch/WolframLanguageForJupyter.git"
+  mkdir .wolfram_installation_temp
+  git clone "$jupyter_url" .wolfram_installation_temp/
+  wget -O .wolfram_installation_temp/install_engine.sh "$url"
+  chmod +x .wolfram_installation_temp/install_engine.sh
+  bash .wolfram_installation_temp/install_engine.sh
+  if $(which wolframscript) &> /dev/null; then
+    wolframscript -activate "$wolfram_id" "$wolfram_password"
+  #else
+    #wget -O .wolfram_installation_temp/wolframscript_installer.deb "$url_wolframscript"
+    #dpkg -i wolframscript_installer.deb
+   # wolframscript -username "$wolfram_id" -password "$wolfram_password"
+  fi
+ ./.wolfram_installation_temp/configure-jupyter.wls add
+  rm -rf .wolfram_installation_temp/
+   echo "Установка wolfram завершена!"
 }
+
+# function docs_link_to_desktop(){ # Написать исправить баг с рабочим столом русскогоязычного пользователя
+# read -p "Создать ссылку на документацию на рабочем столе? (Y/N) " -n 1 -r
+#    echo
+#    if [[  $REPLY =~ ^[Yy] ]]; then
+#     wget -q $JULIA_DOCS_URL
+#     path=$(command pwd)
+#     ln -s $path/JuliaRussianGuide.pdf /home/$USER/Desktop
+#     fi
+#     return
+# }
 
 
 function get_list_releases() {
@@ -67,6 +112,8 @@ function get_list_releases() {
   done
   return
 }
+
+
 
 while [[ $# -gt 0 ]]
 do
@@ -87,18 +134,18 @@ case $key in
       shift
       shift
       ;;
-    --l)
-      if ! [ -x "$(command -v jq --version)" ]
-      then
+    -l| --list)
+      check_jq
+      if [[ "$(which jq)" == "1" ]]; then
         echo "флаг --l требует установленного jg."
         echo
         read -p "установить? При завершении установки jq будет удален (Y/N) " -n 1 -r
         if [[  $REPLY =~ ^[Yy] ]]; then
           install_jq
-          JQ_INSTALLED=0
+          export JQ_INSTALL=1
           fi
       else
-        JQ_INSTALLED=1
+        export JQ_INSTALL=0
         get_list_releases
         echo
       fi
@@ -110,7 +157,6 @@ case $key in
       usage
       exit 1;
       ;;
-
 esac
 done
 
@@ -118,10 +164,9 @@ if [[ "$(whoami)" == "root" ]]; then
   JULIA_DOWNLOAD="${JULIA_DOWNLOAD:-"/opt/julias"}"
   JULIA_INSTALL="${JULIA_INSTALL:-"/usr/local/bin"}"
 else
-  JULIA_DOWNLOAD="${JULIA_DOWNLOAD:-"$HOME/packages/julias"}"
-  JULIA_INSTALL="${JULIA_INSTALL:-"$HOME/.local/bin"}"
+  echo "необходим root!"
+  exit 1
 fi
-WGET="wget --retry-connrefused -t 3 -q"
 
 function header() {
  echo "Инсталлятор installer.sh"
@@ -130,43 +175,53 @@ function header() {
 
 
 function welcome() {
-  usage
   header
-  mkdir -p "$JULIA_INSTALL" # не создаст папку если отказались
-  LATEST=0
-  if [ -n "${JULIA_VERSION+set}" ]; then
-    version="$JULIA_VERSION"
-  else
-    LATEST=1
-    version="$JULIA_LATEST-latest"
+  if [[ "$SKIP_CONFIRM" == "1" ]]; then # Исправить на 0
+    if  [[ "$(which julia)" -eq "0" ]]; then
+      echo "Julia уже установлена"
+    else
+      mkdir -p "$JULIA_INSTALL"
+      LATEST=0
+      if [ -n "${JULIA_VERSION+set}" ]; then
+        version="$JULIA_VERSION"
+      else
+        LATEST=1
+        version="$JULIA_LATEST-latest"
+      fi
+    fi
   fi
   echo "Скрипт:"
   echo ""
   echo "  - попытается загрузить Julia '$version'"
   echo "  - Создаст символьную ссылку julia"
-  echo "  - Создаст символьную ссылку julia-VER"
+  echo "  - Установит Jupyter Notebook"
+  echo "  - Установит wolfram Engine для Jupyter"
   echo ""
-  echo "Путь для загрузки: ${JULIA_DOWNLOAD@Q}"
-  echo "Путь для символьной ссылки: ${JULIA_INSTALL@Q}"
+  echo "Путь для загрузки Julia: ${JULIA_DOWNLOAD@Q}"
+  echo "Путь для символьной ссылки Julia: ${JULIA_INSTALL@Q}"
   echo ""
-  if [ ! -d "$JULIA_DOWNLOAD" ]; then
+  if ! [ -d "$JULIA_DOWNLOAD" ]; then
     echo "Директория для скачивания автоматически создастся"
   fi
-  if [ ! -w "$JULIA_INSTALL" ]; then
+  if ! [  -w "$JULIA_INSTALL" ]; then
     echo "Недостаточно прав для установки в ${JULIA_INSTALL@Q}."
     exit 1
   fi
 }
 
 
-
-function confirm() {
-  read -p "Вы согласны? (Y/N) " -n 1 -r
+function confirm_julia() {
+  read -p "Вы согласны установить Julia? (Y/N) " -n 1 -r
   echo
   if [[  $REPLY =~ ^[Yy] ]]; then
      install_julia_linux
-    else
-    exit 1
+  fi
+}
+function confirm_wolfram() {
+  read -p "Вы согласны установить wolfram? (Y/N) " -n 1 -r
+  echo
+  if [[  $REPLY =~ ^[Yy] ]]; then
+     wolfram_engine_install
   fi
 }
 
@@ -195,7 +250,7 @@ function install_julia_linux() {
     LATEST=1
     version="$JULIA_LATEST-latest"
   fi
-  echo "Загрузка Julia  $version, пожалуйста подождите"
+  echo "Загрузка Julia  $version, пожалуйста, подождите"
   if [ ! -f "julia-$version.tar.gz" ]; then
     url="$(get_url_from_platform_arch_version linux "$arch" "$version")"
     if ! $WGET -c "$url" -O "julia-$version.tar.gz"; then
@@ -247,24 +302,16 @@ function install_julia_linux() {
 
 
 # --------------------------------------------------------
-
-welcome
-if [[ "$SKIP_CONFIRM" == "0" ]]; then
-    if  [[ -x "$(command -v julia --version)" ]]; then
-    echo "Julia уже установлена"
-    else
-      confirm
-    fi
-fi
-
 unameOut="$(uname -s)"
 case "${unameOut}" in
-    Linux*) jupyter_install
-            delete_jq
-            package_installer
-            ;;
-    *)
-        echo "Unsupported platform $(unameOut)" >&2
-        exit 1
-        ;;
+  Linux*) welcome
+          confirm_julia
+          #jupyter_install
+          delete_jq
+          package_installer
+          confirm_wolfram
+          ;;
+  *) echo "Unsupported platform $(unameOut)" >&2
+     exit 1
+    ;;
 esac
