@@ -1,17 +1,25 @@
 #!/usr/bin/env bash
 
-JULIA_LTS=1.6.7
-JULIA_LATEST=1.10
+JULIA_LTS=1.10.7
+JULIA_LATEST=1.11.2
 JULIA_OLD=""
-SKIP_CONFIRM=0
-JQ_INSTALL=0
-WOLFRAM_INSTALL=0
+JQ_INSTALL=1
+JUPYTER_INSTALLED=1
 JULIA_DOCS_URL="https://github.com/EnckyOff/JuliaInstaller/blob/master/JuliaRussianGuide.pdf"
+PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
+USE_PIPX=1
+
+function check_python_version() {
+  if [[ "$(printf '%s\n' "3.11" "$PYTHON_VERSION" | sort -V | head -n 1)" == "3.11" ]]; then
+    USE_PIPX=0
+  fi
+}
+
 
 function usage() {
   echo " Справка по installer.sh
 
-Скрипт устанавливает Julia. По умолчанию ставится последняя стабильная версия ($JULIA_LATEST-latest).
+Скрипт устанавливает Julia. По умолчанию ставится последняя стабильная версия ($JULIA_LATEST).
 
 
 Options and arguments:
@@ -27,44 +35,57 @@ Options and arguments:
 "
 }
 
-function install_jq(){
+function install_jq() {
 sudo apt install jq
 }
 
-function check_jq(){
-   if [ "$(jq --version)" == "1" ] &> /dev/null; then
-  JQ_INSTALL=1
+function check_jq() {
+  if command -v jq &>/dev/null; then
+  JQ_INSTALL=0
   fi
 }
 
-function delete_jq(){
+function delete_jq() {
   if [[ "$JQ_INSTALL" -eq 1 ]]; then
   echo "Удаляем jq"
   sudo apt remove jq
   fi
 }
 
-function package_installer(){
+function package_installer() {
   if [ "$(which julia)" == "0" ] &> /dev/null; then
    bash julia package_installer.jl
   fi
 }
-function add_jupyter_to_PATH(){
-  echo "Настраиваем пути Jupyter Notebook"
-  pipx_venv_path=$(pipx environment | grep "PIPX_LOCAL_VENVS" | cut -d "=" -f 2)
-  notebook_venv_path="$pipx_venv_path/notebook/bin"
-  echo "# Created by SystemOpenMath" >> ~/.bashrc
-  echo "export PATH=\"\$PATH:$notebook_venv_path\"" >> ~/.bashrc
+
+function check_jupyter_install() {
+    check_python_version
+    command -v jupyter &>/dev/null && JUPYTER_INSTALLED=0
 }
 
+function jupyter_install() {
+  if [[ "$JUPYTER_INSTALLED" -eq 1 ]]; then
+      echo "Установка jupyter"y
+      if [[ "$USE_PIPX" -eq 0 ]]; then
+        pipx install notebook > /dev/null 2>&1
+      else 
+       python3 -m pip install notebook > /dev/null 2>&1
+      fi
+  fi 
+}
 
-function jupyter_install(){
-    # Сделать проверку есть ли Jupyter в PATH
-    # Сделать проверку, что существует ipython
-        echo "устанавливаем Jupyter notebook"
-        pipx install notebook --include-deps
-        echo "Добавляем пути"
-        #add_jupyter_to_PATH
+function scilab_kernel_installation(){
+    read -p "Хотите установить Scilab в Jupyter? (y/n): "
+    if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+      pipx inject notebook scilab_kernel
+    fi
+    }
+
+function add_pipx_to_PATH(){
+  echo "Настраиваем пути Jupyter Notebook"
+  pipx_venv_path=$(sudo pipx environment | grep "PIPX_BIN_DIR" | cut -d "=" -f 2)
+  echo "# Created by SystemOpenMath" >> ~/.bashrc
+  echo "export PATH=\"\$PATH:$notebook_venv_path\"" >> ~/.bashrc
 }
 
 
@@ -75,55 +96,7 @@ function get_list_releases() {
   do
   echo "$i"
   done
-  return
 }
-
-
-
-while [[ $# -gt 0 ]]
-do
-key="$1"
-
-case $key in
-    -h|--help)
-      usage
-      shift
-      exit 0
-      ;;
-    --lts)
-      JULIA_VERSION="$JULIA_LTS"
-      shift
-      ;;
-      --ver)
-      JULIA_VERSION="$2"
-      shift
-      shift
-      ;;
-    -l| --list)
-      check_jq
-      if [[ "$(which jq)" == "1" ]]; then
-        echo "флаг --l требует установленного jg."
-        echo
-        read -p "установить? При завершении установки jq будет удален (Y/N) " -n 1 -r
-        if [[  $REPLY =~ ^[Yy] ]]; then
-          install_jq
-          export JQ_INSTALL=1
-          fi
-      else
-        export JQ_INSTALL=0
-        get_list_releases
-        echo
-      fi
-      shift
-      exit 1
-      ;;
-    *)    # unknown
-      echo "Неизвестный флаг: $1" >&2
-      usage
-      exit 1;
-      ;;
-esac
-done
 
 if [[ "$(whoami)" == "root" ]]; then
   JULIA_DOWNLOAD="${JULIA_DOWNLOAD:-"/opt/julias"}"
@@ -133,43 +106,30 @@ else
   exit 1
 fi
 
-function header() {
- echo "Инсталлятор installer.sh"
-}
 
 
 
 function welcome() {
-  header
-  if [[ "$SKIP_CONFIRM" == "1" ]]; then # Исправить на 0
-    if  [[ "$(which julia)" -eq "0" ]]; then
-      echo "Julia уже установлена"
-    else
-      mkdir -p "$JULIA_INSTALL"
-      LATEST=0
-      if [ -n "${JULIA_VERSION+set}" ]; then
-        version="$JULIA_VERSION"
-      else
-        LATEST=1
-        version="$JULIA_LATEST-latest"
-      fi
+  if   command -v julia &>/dev/null; then
+    echo "Julia уже установлена"
+  else
+    echo "Скрипт:"
+    echo ""
+    echo "  - попытается загрузить Julia $version"
+    echo "  - Создаст символьную ссылку julia"
+    echo "  - Установит Jupyter Notebook"
+    echo ""
+    echo "Путь для загрузки Julia: ${JULIA_DOWNLOAD@Q}"
+    echo "Путь для символьной ссылки Julia: ${JULIA_INSTALL@Q}"
+    echo ""
+    if ! [ -d "$JULIA_DOWNLOAD" ]; then
+      echo "Директория для скачивания автоматически создастся"
     fi
-  fi
-  echo "Скрипт:"
-  echo ""
-  echo "  - попытается загрузить Julia '$version'"
-  echo "  - Создаст символьную ссылку julia"
-  echo "  - Установит Jupyter Notebook"
-  echo ""
-  echo "Путь для загрузки Julia: ${JULIA_DOWNLOAD@Q}"
-  echo "Путь для символьной ссылки Julia: ${JULIA_INSTALL@Q}"
-  echo ""
-  if ! [ -d "$JULIA_DOWNLOAD" ]; then
-    echo "Директория для скачивания автоматически создастся"
-  fi
-  if ! [  -w "$JULIA_INSTALL" ]; then
-    echo "Недостаточно прав для установки в ${JULIA_INSTALL@Q}."
-    exit 1
+    
+    if ! [  -w "$JULIA_INSTALL" ]; then
+      echo "Недостаточно прав для установки в ${JULIA_INSTALL@Q}."
+      exit 1
+    fi
   fi
 }
 
@@ -178,7 +138,7 @@ function confirm_julia() {
   read -p "Вы согласны установить Julia? (Y/N) " -n 1 -r
   echo
   if [[  $REPLY =~ ^[Yy] ]]; then
-     install_julia_linux
+     install_julia
   fi
 }
 
@@ -195,7 +155,7 @@ function get_url_from_platform_arch_version() {
   echo "$url"
 }
 
-function install_julia_linux() {
+function install_julia() {
   mkdir -p "$JULIA_DOWNLOAD"
   cd "$JULIA_DOWNLOAD" || exit 1
   arch=$(uname -m)
@@ -206,7 +166,7 @@ function install_julia_linux() {
     version="$JULIA_VERSION"
   else
     LATEST=1
-    version="$JULIA_LATEST-latest"
+    version="$JULIA_LATEST"
   fi
   echo "Загрузка Julia  $version, пожалуйста, подождите"
   if [ ! -f "julia-$version.tar.gz" ]; then
@@ -240,17 +200,6 @@ function install_julia_linux() {
   rm -f "$JULIA_INSTALL"/julia{,-"$major",-"$version"}
   julia="$PWD/julia-$version/bin/julia"
 
-  if [[ "$UPGRADE_CONFIRM" == "1" ]]; then
-    old_major="${JULIA_OLD:0:3}"
-    if [ "$USER" == "root" ] && [ -n "$SUDO_USER" ]; then
-      JULIAENV="/home/$SUDO_USER"
-    else
-      JULIAENV=$HOME
-    fi
-    JULIAENV="${JULIAENV}/.julia/environments"
-    echo "Copying environments in ${JULIAENV} from v${old_major} to v${major}"
-    cp -rp "${JULIAENV}/v${old_major}" "${JULIAENV}/v${major}"
-  fi
   echo "создание символьной ссылки"
   # create symlink
   ln -s "$julia" "$JULIA_INSTALL/julia"
@@ -258,17 +207,56 @@ function install_julia_linux() {
   ln -s "$julia" "$JULIA_INSTALL/julia-$version"
 }
 
+start_install(){
+welcome
+check_jupyter_install
+confirm_julia
+jupyter_install
+scilab_kernel_installation
+package_installer
+}
+
+
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case $key in
+    -h|--help)
+      usage
+      shift
+      exit 0
+      ;;
+    --lts)
+      JULIA_VERSION="$JULIA_LTS"
+      shift 
+      ;;
+      --ver)
+      JULIA_VERSION="$2"
+      shift 2
+      ;;
+    -l| --list)
+      check_jq
+      if [[ "$JQ_INSTALL" -ne 0 ]]; then
+        echo "флаг --l требует установленного jg."
+        read -p "установить jq? (Y/N) "
+        if [[  $REPLY =~ ^[Yy] ]]; then
+          install_jq
+          fi
+      else
+        get_list_releases
+      fi
+      shift
+      exit 1
+      ;;
+    *)    # unknown
+      echo "Неизвестный флаг: $1" >&2
+      usage
+      exit 1;
+      ;;
+esac
+done
 
 # --------------------------------------------------------
-unameOut="$(uname -s)"
-case "${unameOut}" in
-  Linux*) welcome
-          confirm_julia
-          #jupyter_install
-          delete_jq
-          package_installer
-          ;;
-  *) echo "Unsupported platform $(unameOut)" >&2
-     exit 1
-    ;;
-esac
+
+start_install
