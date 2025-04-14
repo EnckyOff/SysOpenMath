@@ -1,92 +1,77 @@
 import REPL, Pkg
 using REPL.TerminalMenus
-import REPL.TerminalMenus: header
 
- header(m::MultiSelectMenu) = "нажмите: Enter - выбрать, a - выбрать все, n - убрать все, d - далее, q - отмена"
+# Изменение заголовка меню
+REPL.TerminalMenus.header(m::REPL.TerminalMenus.MultiSelectMenu) = "Нажмите: Enter - выбрать, a - выбрать все, n - убрать всё, d - далее, q - отмена"
 
+JULIA_PACKAGES = Dict(
+    "Стандартный набор" => ["Plots", "IJulia", "Pluto", "PyCall", "SpecialFunctions", "Images"],
+    "Построение графиков" => ["Plots", "Makie", "Gadfly", "GLMakie"],
+    "Разработка приложений с графическим интерфейсом" => ["QML"],
+    "Дополнительные структуры данных" => ["DataStructures", "StructArrays", "DecisionTree"],
+    "Дифференциальные уравнения" => ["DifferentialEquations", "ModelingToolkit"],
+    "Символьные вычисления" => ["Symbolics", "SymbolicUtils", "ModelingToolkit"],
+    "Методы оптимизации" => ["Optim", "JuMP", "BlackBoxOptim"],
+    "Интерполяции" => ["Interpolations"],
+    "Интегрирование" => ["QuadGK", "Roots", "Calculus"],
+    "Нелинейные уравнения" => ["NLsolve"],
+    "Стохастический анализ" => ["CategoricalArrays", "Clustering", "Combinatorics", "Distributions", "GLM", "StatsBase", "StatsModels", "StatsPlots", "MultivariateStats", "Measures"]
+)
 
-DEFAULT_PACKAGES = Dict("стандартный набор" =>["Plots", "IJulia", "Pluto", "PyCall", "SpecialFunctions", "Images"],
-                "Построение графиков" => ["Plots", "Makie", "Gradfly", "GLMakie"],
-                "разработка приложений с графическим интерфейсом" => ["QML"],
-                "Дополнительные структуры данных" => ["DataStructures", "StructArrays", "DecisionTree"],
-                "Дифференциальные уравнения" => ["DifferentialEquations", "ModelingToolkit"],
-                "Символьные вычисления" => ["Symbolics","SymbolicUtils", "ModelingToolkit"],
-                "методы оптимизации" => ["Optim","JuMP","BlackBoxOptim" ],
-                "Интерполяции" => ["Interpolations"],
-                "Интегрирование" => ["QuadGK", "Roots", "Calculus"],
-                "Нелинейные уравнения" => ["NLsolve"],
-                "Стохастический анализ" => ["CategoricalArrays", "Clustering","Combinatorics",
-                                            "Distributions", "GLM", "StatsBase", 
-                                            "StatsModels", "StatsPlots", "MultivariateStats","Measures"]
-)               
-function introdution()
-    println("Добро пожаловать в установщик пакетов для julia")
+function introduction()
+    println("Добро пожаловать в установщик пакетов для Julia")
     println("На выбор пользователю предлагается установить следующие наборы пакетов:")
-    for (key, value) in DEFAULT_PACKAGES
+    for (key, value) in JULIA_PACKAGES
         println("$key: ", join(value, ", "))
     end
 end
 
-function names_list(d)
-    menu = collect(keys(d))
-    return menu
-end
-
-
-function printmenu()
-    set_names = names_list(DEFAULT_PACKAGES)
-
-    menu = TerminalMenus.MultiSelectMenu(set_names)
-    choices = TerminalMenus.request("Выберите библиотеки которые хотите установить:", menu)
-    selected_items = []
-
-    if length(choices) > 0
-        println("Выбрано:")
-        for i in choices
-            println("- ", set_names[i])
-        push!(selected_items, set_names[i])
-        end
-    else
-        println("отменено.")
-        exit(1);
+function select_packages_for_category(category, packages)
+    menu = REPL.TerminalMenus.MultiSelectMenu(packages)
+    println("\nКатегория: $category")
+    choices = request("Выберите пакеты для установки:", menu)
+    if isempty(choices)
+        println("Категория '$category' пропущена.")
+        return []
     end
-    return selected_items
+    return [packages[i] for i in choices]
 end
 
-
-#function edit_packages(package_list)
- #   println("Выберите наборы, которые нужно отредактировать:")
-#end
-
-
-function confirm_install(package_list)
-   # println("вручную выбрать пакеты для установки? ")
-   println("Установить выбранные наборы?")
-    answer = match(r"^[yYnN]", readline()).match
-    if answer in ("y", "Y")
-        start_install(package_list)
-    else
-        println("Установка отменена")
-        exit()
+function confirm_install(packages_to_install)
+    println("\nВы собираетесь установить следующие пакеты:")
+    println(join(packages_to_install, ", "))
+    print("Продолжить? (y/n): ")
+    answer = lowercase(readline())
+    if !(answer == "y")
+        println("Установка отменена.")
+        exit(0)
     end
 end
 
- function start_install(package_list)
-    for name in package_list
-        packages  = get(DEFAULT_PACKAGES, name, 0)
-        for package in packages
-            println("Установка: $package")
-            Pkg.add(package)
-        end
-    end 
+function install_packages(packages_to_install)
+    for package in packages_to_install
+        println("Установка: $package")
+        Pkg.add(package)
+    end
 end
-
 
 function main()
-    introdution()
-    items = printmenu()
-    confirm_install(items)
-    exit()
+    introduction()
+    all_packages = []
+
+    for (category, packages) in JULIA_PACKAGES
+        selected_packages = select_packages_for_category(category, packages)
+        append!(all_packages, selected_packages)
+    end
+
+    if isempty(all_packages)
+        println("Не выбрано ни одного пакета. Выход.")
+        exit(0)
+    end
+
+    confirm_install(all_packages)
+    install_packages(all_packages)
+    println("Установка завершена.")
 end
 
 main()
