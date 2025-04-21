@@ -1,92 +1,118 @@
 import REPL, Pkg
 using REPL.TerminalMenus
-import REPL.TerminalMenus: header
+REPL.TerminalMenus.header(m::REPL.TerminalMenus.MultiSelectMenu) = "Нажмите: Enter - выбрать, a - выбрать все, n - убрать всё, d - далее, ctrl+c - отмена"
 
- header(m::MultiSelectMenu) = "нажмите: Enter - выбрать, a - выбрать все, n - убрать все, d - далее, q - отмена"
+# Julia packages
+JULIA_PACKAGES = Dict(
+    "Стандартный набор" => ["Plots", "IJulia", "Pluto", "PyCall", "SpecialFunctions", "Images"],
+    "Построение графиков" => ["Makie", "Gadfly", "GLMakie"],
+    "Разработка приложений с графическим интерфейсом" => ["QML"],
+    "Дополнительные структуры данных" => ["DataStructures", "StructArrays", "DecisionTree"],
+    "Дифференциальные уравнения" => ["DifferentialEquations", "ModelingToolkit"],
+    "Символьные вычисления" => ["Symbolics", "SymbolicUtils", "ModelingToolkit"],
+    "Методы оптимизации" => ["Optim", "JuMP", "BlackBoxOptim"],
+    "Интерполяции" => ["Interpolations"],
+    "Интегрирование" => ["QuadGK", "Roots", "Calculus"],
+    "Нелинейные уравнения" => ["NLsolve"],
+    "Стохастический анализ" => [
+        "CategoricalArrays", "Clustering", "Combinatorics", 
+         "Distributions", "GLM", "StatsBase", "StatsModels", "StatsPlots",
+         "MultivariateStats", "Measures"
+    ]
+)
 
+# Python Packages
+PYTHON_PACKAGES = Dict(
+    "Стандартный набор" => ["numpy", "pandas", "scikit-learn", "scipy", "sympy"],
+    "Визуализация" => ["seaborn", "plotly"],
+    "Работа с изображениями" => ["opencv-python", "Pillow"],
+)
 
-DEFAULT_PACKAGES = Dict("стандартный набор" =>["Plots", "IJulia", "Pluto", "PyCall", "SpecialFunctions", "Images"],
-                "Построение графиков" => ["Plots", "Makie", "Gradfly", "GLMakie"],
-                "разработка приложений с графическим интерфейсом" => ["QML"],
-                "Дополнительные структуры данных" => ["DataStructures", "StructArrays", "DecisionTree"],
-                "Дифференциальные уравнения" => ["DifferentialEquations", "ModelingToolkit"],
-                "Символьные вычисления" => ["Symbolics","SymbolicUtils", "ModelingToolkit"],
-                "методы оптимизации" => ["Optim","JuMP","BlackBoxOptim" ],
-                "Интерполяции" => ["Interpolations"],
-                "Интегрирование" => ["QuadGK", "Roots", "Calculus"],
-                "Нелинейные уравнения" => ["NLsolve"],
-                "Стохастический анализ" => ["CategoricalArrays", "Clustering","Combinatorics",
-                                            "Distributions", "GLM", "StatsBase", 
-                                            "StatsModels", "StatsPlots", "MultivariateStats","Measures"]
-)               
-function introdution()
-    println("Добро пожаловать в установщик пакетов для julia")
+function introduction()
+    println("Добро пожаловать в установщик пакетов для Julia и Python")
     println("На выбор пользователю предлагается установить следующие наборы пакетов:")
-    for (key, value) in DEFAULT_PACKAGES
+    println("\nJulia-пакеты:")
+    for (key, value) in JULIA_PACKAGES
+        println("$key: ", join(value, ", "))
+    end
+    println("\nPython-пакеты:")
+    for (key, value) in PYTHON_PACKAGES
         println("$key: ", join(value, ", "))
     end
 end
 
-function names_list(d)
-    menu = collect(keys(d))
-    return menu
-end
-
-
-function printmenu()
-    set_names = names_list(DEFAULT_PACKAGES)
-
-    menu = TerminalMenus.MultiSelectMenu(set_names)
-    choices = TerminalMenus.request("Выберите библиотеки которые хотите установить:", menu)
-    selected_items = []
-
-    if length(choices) > 0
-        println("Выбрано:")
-        for i in choices
-            println("- ", set_names[i])
-        push!(selected_items, set_names[i])
+function select_packages_for_category(category, packages)
+    menu = REPL.TerminalMenus.MultiSelectMenu(packages)
+    println("\nКатегория: $category")
+    try
+        choices = request("Выберите пакеты для установки:", menu)
+        if isempty(choices)
+            println("Категория '$category' пропущена.")
+            return []
         end
-    else
-        println("отменено.")
-        exit(1);
+        return [packages[i] for i in choices]
+    catch e
+        if isa(e, InterruptException)
+            println("\nВыход")
+            exit(0)
+        else
+            rethrow(e)
+        end
     end
-    return selected_items
+    return [packages[i] for i in choices]
 end
 
-
-#function edit_packages(package_list)
- #   println("Выберите наборы, которые нужно отредактировать:")
-#end
-
-
-function confirm_install(package_list)
-   # println("вручную выбрать пакеты для установки? ")
-   println("Установить выбранные наборы?")
-    answer = match(r"^[yYnN]", readline()).match
-    if answer in ("y", "Y")
-        start_install(package_list)
-    else
-        println("Установка отменена")
-        exit()
+function confirm_install(julia_packages, python_packages)
+    println("\nВы собираетесь установить следующие Julia-пакеты:")
+    println(join(julia_packages, ", "))
+    println("\nИ следующие Python-пакеты:")
+    println(join(python_packages, ", "))
+    print("Продолжить? (y/n): ")
+    answer = lowercase(readline())
+    if !(answer == "y")
+        println("Установка отменена.")
+        exit(0)
     end
 end
 
- function start_install(package_list)
-    for name in package_list
-        packages  = get(DEFAULT_PACKAGES, name, 0)
-        for package in packages
-            println("Установка: $package")
-            Pkg.add(package)
-        end
-    end 
+function install_julia_packages(packages)
+    for package in packages
+        println("Установка Julia-пакета: $package")
+        Pkg.add(package)
+    end
 end
 
+function install_python_packages(packages)
+    for package in packages
+        println("Установка Python-пакета: $package")
+        run(`pipx inject jupyter $package`)
+    end
+end
 
 function main()
-    introdution()
-    items = printmenu()
-    confirm_install(items)
-    exit()
+    introduction()
+    julia_to_install = []
+    python_to_install = []
+
+    for (category, packages) in JULIA_PACKAGES
+        selected = select_packages_for_category(category, packages)
+        append!(julia_to_install, selected)
+    end
+
+    for (category, packages) in PYTHON_PACKAGES
+        selected = select_packages_for_category(category, packages)
+        append!(python_to_install, selected)
+    end
+
+    if isempty(julia_to_install) && isempty(python_to_install)
+        println("Не выбрано ни одного пакета. Выход.")
+        exit(0)
+    end
+
+    confirm_install(julia_to_install, python_to_install)
+    install_julia_packages(julia_to_install)
+    install_python_packages(python_to_install)
+    println("\nУстановка завершена.")
 end
 
 main()

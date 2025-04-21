@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-
+set -e 
 JULIA_LTS=1.10.7
-JULIA_LATEST=1.11.2
+JULIA_LATEST=1.11.5
 JULIA_OLD=""
 JQ_INSTALL=1
-JUPYTER_INSTALLED=1
-JULIA_DOCS_URL="https://github.com/EnckyOff/JuliaInstaller/blob/master/JuliaRussianGuide.pdf"
+JUPYTER_INSTALLED=0
 PYTHON_VERSION=$(python3 --version 2>&1 | awk '{print $2}')
-USE_PIPX=1
+USE_PIPX=0
+
 
 function check_python_version() {
-  if [[ "$(printf '%s\n' "3.11" "$PYTHON_VERSION" | sort -V | head -n 1)" == "3.11" ]]; then
-    USE_PIPX=0
+  if [[ "$(printf '%s\n' "3.11" "$PYTHON_VERSION" | sort -V | tail -n 1)" == "$PYTHON_VERSION" ]]; then
+    USE_PIPX=1
+    install_pipx
   fi
 }
 
@@ -25,13 +26,13 @@ function usage() {
 Options and arguments:
   -h, --help               : Показать справку
   --lts                    : Установить LTS версию ($JULIA_LTS)
-  --l                      : Получить список доступных для установки версий
+  -l                      : Получить список доступных для установки версий
   --ver                    : Указать версию для установки
 
   Директория в которую будет загружен и распакован архив .tar.gz:
-    По умолчанию /opt/julias
+    По умолчанию home/user/julias
   Директория в которую будет установлена символьная ссылка на julia.
-    По умолчанию при запуске /usr/local/bin.
+    По умолчанию при запуске home/user/.local/bin.
 "
 }
 
@@ -52,42 +53,127 @@ function delete_jq() {
   fi
 }
 
-function package_installer() {
-  if [ "$(which julia)" == "0" ] &> /dev/null; then
-   bash julia package_installer.jl
-  fi
+  function package_installer() {
+    julia package_installer.jl 2>/dev/null || {
+        echo "Ошибка: Не удалось запустить package_installer.jl"
+        return 1
+    }
 }
 
-function check_jupyter_install() {
-    check_python_version
-    command -v jupyter &>/dev/null && JUPYTER_INSTALLED=0
+  function check_jupyter_install() {
+      check_python_version
+      if command -v jupyter &>/dev/null; then
+        JUPYTER_INSTALLED=1
+    else
+        JUPYTER_INSTALLED=0
+    fi
+  }
+function install_pipx(){
+  echo "Установка pipx"
+  sudo apt install pipx
+  pipx ensurepath
+  source ~/.bashrc
 }
 
 function jupyter_install() {
-  if [[ "$JUPYTER_INSTALLED" -eq 1 ]]; then
-      echo "Установка jupyter"y
-      if [[ "$USE_PIPX" -eq 0 ]]; then
-        pipx install notebook > /dev/null 2>&1
+  if [[ "$JUPYTER_INSTALLED" -eq 0 ]]; then
+      echo "Установка jupyter"
+      if [[ "$USE_PIPX" -eq 1 ]]; then
+      pipx install --include-deps jupyter
       else 
-       python3 -m pip install notebook > /dev/null 2>&1
+       python3 -m pip install notebook
       fi
   fi 
 }
 
-function scilab_kernel_installation(){
-    read -p "Хотите установить Scilab в Jupyter? (y/n): "
-    if [[ "$REPLY" =~ ^[Yy]$ ]]; then
-      pipx inject notebook scilab_kernel
+function scilab_kernel_install(){
+    read -rp "Хотите установить bash kernel в Jupyter? (y/n): " reply
+    if [[ "$reply" =~ ^[Yy]$ ]]; then
+      pipx inject --include-apps --include-deps jupyter scilab_kernel
+      PIPX_PATH="$(pipx environment | grep PIPX_LOCAL_VENVS | cut -d= -f2)"
+      source "$PIPX_PATH"/jupyter/bin/activate
+      # python3 -m scilab_kernel.check
+      python3 -m scilab_kernel install --user
+      deactivate 
+      echo "Ядро scilab успешно добавлено в Jupyter!" 
+      return 0
     fi
     }
-
-function add_pipx_to_PATH(){
-  echo "Настраиваем пути Jupyter Notebook"
-  pipx_venv_path=$(sudo pipx environment | grep "PIPX_BIN_DIR" | cut -d "=" -f 2)
-  echo "# Created by SystemOpenMath" >> ~/.bashrc
-  echo "export PATH=\"\$PATH:$notebook_venv_path\"" >> ~/.bashrc
+function bash_kernel_install(){
+    read -rp "Хотите установить bash kernel в Jupyter? (y/n): " reply   
+     if [[ "$reply" =~ ^[Yy]$ ]]; then
+      pipx inject --include-apps --include-deps jupyter bash_kernel
+      PIPX_PATH="$(pipx environment | grep PIPX_LOCAL_VENVS | cut -d= -f2)"
+      source "$PIPX_PATH"/jupyter/bin/activate
+      #python3 -m bash_kernel check
+      python3 -m bash_kernel.install --user
+      deactivate 
+      echo "Ядро Bash успешно добавлено в Jupyter!" 
+      return 0
+    fi
 }
 
+function octave_kernel_install(){
+    read -rp "Хотите установить octave kernel в Jupyter? (y/n): " reply   
+     if [[ "$reply" =~ ^[Yy]$ ]]; then
+      pipx inject --include-apps --include-deps jupyter octave_kernel
+      PIPX_PATH="$(pipx environment | grep PIPX_LOCAL_VENVS | cut -d= -f2)"
+      source "$PIPX_PATH"/jupyter/bin/activate
+      #python3 -m bash_kernel check
+      python3 -m octave_kernel install --user
+      deactivate
+      echo "Ядро Octave успешно добавлено в Jupyter!" 
+      return 0
+    fi
+}
+function wolfram_engine_install(){
+  url="https://account.wolfram.com/dl/WolframEngine?version=14.0&platform=Linux&downloadManager=false&includesDocumentation=false"
+  git_url="https://github.com/WolframResearch/WolframLanguageForJupyter.git"
+
+  echo "Проверка наличия установленного Wolfram Mathematica или Engine..."
+  if command -v Mathematica &> /dev/null || command -v wolframscript &> /dev/null; then
+    mkdir .wolfram_installation_temp
+    cd .wolfram_installation_temp || exit
+    echo "Загрузка WolframKernelForJupyter"
+    git clone "$git_url" .
+    read -r -p "Введите свой wolfram ID: " wolfram_id
+    read -r -p "Введите пароль: " wolfram_password
+    echo
+    echo "Активация Wolfram Engine..."
+    wolframscript -username "$wolfram_id" -password "$wolfram_password"
+    wolframscript -activate
+    echo "Регистрация ядра Wolfram в Jupyter"
+    ./configure-jupyter.wls add
+    echo "Ядро Wolfram успешно добавлено в Jupyter!"
+    return 0
+  fi
+  echo "Wolfram не найден начинается установка Wolfram Engine"
+  read -r -p "Введите свой wolfram ID: " wolfram_id
+  read -r -p "Введите пароль: " wolfram_password
+  echo
+  mkdir -p .wolfram_installation_temp
+  cd .wolfram_installation_temp || exit
+  wget -O install_engine.sh "$url"
+  chmod +x install_engine.sh
+  sudo ./install_engine.sh
+  if command -v wolframscript &> /dev/null; then
+    echo "Активация Wolfram Engine..."
+    wolframscript -username "$wolfram_id" -password "$wolfram_password"
+    wolframscript -activate
+    echo "wolfram активирован!"
+    rm installer_engine.sh
+  else
+    echo "Не удалось найти wolframscript после установки. Проверьте установку вручную."
+    return 1
+  fi
+  echo "Загрузка WolframKernelForJupyter..."
+  git clone "$git_url" .
+  echo "Регистрация ядра Wolfram в Jupyter ..."
+  ./configure-jupyter.wls add
+  rm -rf .wolfram_installation_temp/
+  echo "Установка wolfram завершена!"
+  return 0
+}
 
 function get_list_releases() {
   echo "Список доступных версий для установки:"
@@ -96,42 +182,93 @@ function get_list_releases() {
   do
   echo "$i"
   done
+  return
 }
+
+while [[ $# -gt 0 ]]
+do
+key="$1"
+
+case $key in
+    -h|--help)
+      usage
+      shift
+      exit 0
+      ;;
+    --lts)
+      JULIA_VERSION="$JULIA_LTS"
+      shift 
+      ;;
+      --ver)
+      JULIA_VERSION="$2"
+      shift 2
+      ;;
+    -l| --list)
+      check_jq
+      if [[ "$JQ_INSTALL" -ne 0 ]]; then
+        echo "флаг --l требует установленного jg."
+        read -pr "установить jq? (Y/N) "
+        if [[  $REPLY =~ ^[Yy] ]]; then
+          install_jq
+          fi
+      else
+        get_list_releases
+      fi
+      shift
+      exit 1
+      ;;
+    *)    # unknown
+      echo "Неизвестный флаг: $1" >&2
+      usage
+      exit 1;
+      ;;
+esac
+done
 
 if [[ "$(whoami)" == "root" ]]; then
   JULIA_DOWNLOAD="${JULIA_DOWNLOAD:-"/opt/julias"}"
   JULIA_INSTALL="${JULIA_INSTALL:-"/usr/local/bin"}"
 else
-  echo "необходим root!"
-  exit 1
+  JULIA_DOWNLOAD="${JULIA_DOWNLOAD:-"$HOME/packages/julias"}"
+  JULIA_INSTALL="${JULIA_INSTALL:-"$HOME/.local/bin"}"
 fi
+WGET="wget --retry-connrefused -t 3"
 
+function header() {
+ echo "Инсталлятор installer.sh"
+}
 
 
 
 function welcome() {
-  if   command -v julia &>/dev/null; then
-    echo "Julia уже установлена"
+  usage
+  header
+  mkdir -p "$JULIA_INSTALL" # не создаст папку если отказались
+  LATEST=0
+  if [ -n "${JULIA_VERSION+set}" ]; then
+    version="$JULIA_VERSION"
   else
-    echo "Скрипт:"
-    echo ""
-    echo "  - попытается загрузить Julia $version"
-    echo "  - Создаст символьную ссылку julia"
-    echo "  - Установит Jupyter Notebook"
-    echo ""
-    echo "Путь для загрузки Julia: ${JULIA_DOWNLOAD@Q}"
-    echo "Путь для символьной ссылки Julia: ${JULIA_INSTALL@Q}"
-    echo ""
-    if ! [ -d "$JULIA_DOWNLOAD" ]; then
-      echo "Директория для скачивания автоматически создастся"
-    fi
-    
-    if ! [  -w "$JULIA_INSTALL" ]; then
-      echo "Недостаточно прав для установки в ${JULIA_INSTALL@Q}."
-      exit 1
-    fi
+    LATEST=1
+    version="$JULIA_LATEST"
+  fi
+  echo "Скрипт:"
+  echo ""
+  echo "  - попытается загрузить Julia '$version'"
+  echo "  - Создаст символьную ссылку julia"
+  echo "  - Создаст символьную ссылку julia-VER"
+  echo ""
+  echo "Путь для загрузки: ${JULIA_DOWNLOAD@Q}"
+  echo "Путь для символьной ссылки: ${JULIA_INSTALL@Q}"
+  echo ""
+  if [ ! -d "$JULIA_DOWNLOAD" ]; then
+    echo "Директория для скачивания автоматически создастся"
+  fi
+  if [ ! -w "$JULIA_INSTALL" ]; then
+    echo "Недостаточно прав для установки в ${JULIA_INSTALL@Q}."
+    exit 1
   fi
 }
+
 
 
 function confirm_julia() {
@@ -141,8 +278,6 @@ function confirm_julia() {
      install_julia
   fi
 }
-
-
 
 function get_url_from_platform_arch_version() {
   platform=$1
@@ -168,10 +303,11 @@ function install_julia() {
     LATEST=1
     version="$JULIA_LATEST"
   fi
-  echo "Загрузка Julia  $version, пожалуйста, подождите"
+  echo "Загрузка Julia  $version, пожалуйста подождите"
   if [ ! -f "julia-$version.tar.gz" ]; then
     url="$(get_url_from_platform_arch_version linux "$arch" "$version")"
-    if ! $WGET -c "$url" -O "julia-$version.tar.gz"; then
+    rm -f "julia-$version.tar.gz" "julia-$version.tar.gz.*"
+    if ! $WGET "$url" -O "julia-$version.tar.gz"; then
       echo "ошибка загрузки julia-$version"
       rm "julia-$version.tar.gz"
       return
@@ -185,7 +321,7 @@ function install_julia() {
     tar zxf "julia-$version.tar.gz" -C "julia-$version" --strip-components 1
   fi
   if [[ "$LATEST" == "1" ]]; then
-    JLVERSION=$(./julia-$version/bin/julia -version | cut -d' ' -f3)
+    JLVERSION=$(./julia-"$version"/bin/julia -version | cut -d' ' -f3)
     if [ -d "julia-$JLVERSION" ]; then
       echo "Внимание: Последняя версия $JLVERSION уже установлена."
       rm -rf "julia-$version.tar.gz" "julia-$version"
@@ -200,63 +336,39 @@ function install_julia() {
   rm -f "$JULIA_INSTALL"/julia{,-"$major",-"$version"}
   julia="$PWD/julia-$version/bin/julia"
 
+  if [[ "$UPGRADE_CONFIRM" == "1" ]]; then
+    old_major="${JULIA_OLD:0:3}"
+    if [ "$USER" == "root" ] && [ -n "$SUDO_USER" ]; then
+      JULIAENV="/home/$SUDO_USER"
+    else
+      JULIAENV=$HOME
+    fi
+    JULIAENV="${JULIAENV}/.julia/environments"
+    echo "Copying environments in ${JULIAENV} from v${old_major} to v${major}"
+    cp -rp "${JULIAENV}/v${old_major}" "${JULIAENV}/v${major}"
+  fi
   echo "создание символьной ссылки"
   # create symlink
   ln -s "$julia" "$JULIA_INSTALL/julia"
   ln -s "$julia" "$JULIA_INSTALL/julia-$major"
   ln -s "$julia" "$JULIA_INSTALL/julia-$version"
+  source ~/.bashrc
 }
 
+
+
+
+# --------------------------------------------------------
 start_install(){
 welcome
 check_jupyter_install
-confirm_julia
+ confirm_julia
 jupyter_install
-scilab_kernel_installation
+scilab_kernel_install
+octave_kernel_install
+bash_kernel_install
+wolfram_engine_install
 package_installer
 }
-
-
-while [[ $# -gt 0 ]]
-do
-key="$1"
-
-case $key in
-    -h|--help)
-      usage
-      shift
-      exit 0
-      ;;
-    --lts)
-      JULIA_VERSION="$JULIA_LTS"
-      shift 
-      ;;
-      --ver)
-      JULIA_VERSION="$2"
-      shift 2
-      ;;
-    -l| --list)
-      check_jq
-      if [[ "$JQ_INSTALL" -ne 0 ]]; then
-        echo "флаг --l требует установленного jg."
-        read -p "установить jq? (Y/N) "
-        if [[  $REPLY =~ ^[Yy] ]]; then
-          install_jq
-          fi
-      else
-        get_list_releases
-      fi
-      shift
-      exit 1
-      ;;
-    *)    # unknown
-      echo "Неизвестный флаг: $1" >&2
-      usage
-      exit 1;
-      ;;
-esac
-done
-
-# --------------------------------------------------------
 
 start_install
