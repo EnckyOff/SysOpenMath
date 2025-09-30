@@ -54,7 +54,7 @@ function delete_jq() {
 }
 
   function package_installer() {
-    julia package_installer.jl 2>/dev/null || {
+    USE_PIPX=$USE_PIPX julia package_installer.jl 2>/dev/null || {
         echo "Ошибка: Не удалось запустить package_installer.jl"
         return 1
     }
@@ -81,14 +81,14 @@ function jupyter_install() {
       if [[ "$USE_PIPX" -eq 1 ]]; then
       pipx install --include-deps jupyter
       else 
-       python3 -m pip install notebook
+       python3 -m pip install notebook jupyter-lab
       fi
   fi 
 }
 
 function scilab_kernel_install(){
-    read -rp "Хотите установить bash kernel в Jupyter? (y/n): " reply
-    if [[ "$reply" =~ ^[Yy]$ ]]; then
+    read -rp "Хотите установить Scilab kernel в Jupyter? (y/n): " reply
+    if [[ "$reply" =~ ^[YyДд]$ ]]; then
       pipx inject --include-apps --include-deps jupyter scilab_kernel
       PIPX_PATH="$(pipx environment | grep PIPX_LOCAL_VENVS | cut -d= -f2)"
       source "$PIPX_PATH"/jupyter/bin/activate
@@ -101,7 +101,7 @@ function scilab_kernel_install(){
     }
 function bash_kernel_install(){
     read -rp "Хотите установить bash kernel в Jupyter? (y/n): " reply   
-     if [[ "$reply" =~ ^[Yy]$ ]]; then
+     if [[ "$reply" =~ ^[YyДд]$ ]]; then
       pipx inject --include-apps --include-deps jupyter bash_kernel
       PIPX_PATH="$(pipx environment | grep PIPX_LOCAL_VENVS | cut -d= -f2)"
       source "$PIPX_PATH"/jupyter/bin/activate
@@ -127,52 +127,55 @@ function octave_kernel_install(){
     fi
 }
 function wolfram_engine_install(){
-  url="https://account.wolfram.com/dl/WolframEngine?version=14.0&platform=Linux&downloadManager=false&includesDocumentation=false"
+  url="https://account.wolfram.com/dl/WolframEngine?version=14.2.1&platform=Linux"
   git_url="https://github.com/WolframResearch/WolframLanguageForJupyter.git"
-
-  echo "Проверка наличия установленного Wolfram Mathematica или Engine..."
-  if command -v Mathematica &> /dev/null || command -v wolframscript &> /dev/null; then
-    mkdir .wolfram_installation_temp
-    cd .wolfram_installation_temp || exit
-    echo "Загрузка WolframKernelForJupyter"
-    git clone "$git_url" .
+  read -rp "Хотите установить wolfram kernel в Jupyter? (y/n): " reply   
+  if [[ "$reply" =~ ^[Yy]$ ]]; then
+    apt install git -y
+    echo "Проверка наличия установленного Wolfram Mathematica или Engine..."
+    if command -v Mathematica &> /dev/null || command -v wolframscript &> /dev/null; then
+      mkdir -p .wolfram_installation_temp
+      cd .wolfram_installation_temp || exit
+      echo "Загрузка WolframKernelForJupyter"
+      git clone "$git_url" .
+      echo "Регистрация ядра Wolfram в Jupyter"
+      ./configure-jupyter.wls add
+      echo "Ядро Wolfram успешно добавлено в Jupyter!"
+      return 0
+    fi
+    echo "Wolfram не найден начинается установка Wolfram Engine"
     read -r -p "Введите свой wolfram ID: " wolfram_id
     read -r -p "Введите пароль: " wolfram_password
     echo
-    echo "Активация Wolfram Engine..."
-    wolframscript -username "$wolfram_id" -password "$wolfram_password"
-    wolframscript -activate
-    echo "Регистрация ядра Wolfram в Jupyter"
-    ./configure-jupyter.wls add
-    echo "Ядро Wolfram успешно добавлено в Jupyter!"
-    return 0
-  fi
-  echo "Wolfram не найден начинается установка Wolfram Engine"
-  read -r -p "Введите свой wolfram ID: " wolfram_id
-  read -r -p "Введите пароль: " wolfram_password
-  echo
-  mkdir -p .wolfram_installation_temp
-  cd .wolfram_installation_temp || exit
-  wget -O install_engine.sh "$url"
-  chmod +x install_engine.sh
-  sudo ./install_engine.sh
-  if command -v wolframscript &> /dev/null; then
-    echo "Активация Wolfram Engine..."
-    wolframscript -username "$wolfram_id" -password "$wolfram_password"
-    wolframscript -activate
-    echo "wolfram активирован!"
-    rm installer_engine.sh
-  else
-    echo "Не удалось найти wolframscript после установки. Проверьте установку вручную."
-    return 1
-  fi
+    mkdir -p .wolfram_installation_temp
+    cd .wolfram_installation_temp || exit
+    wget -O install_engine.sh "$url"
+    chmod +x install_engine.sh
+    sudo ./install_engine.sh
+    local script_path
+    script_path=$(sudo find /usr/local/Wolfram -type f -name wolframscript | head -n1)
+    if [[ -n "$script_path" ]]; then
+      sudo ln -sf "$script_path" /usr/local/bin/wolframscript
+    else
+      echo "Не найден wolframscript для создания ссылки."
+    fi
+    if command -v wolframscript &> /dev/null; then
+      echo "Активация Wolfram Engine..."
+      wolframscript -username "$wolfram_id" -password "$wolfram_password"
+      echo "wolfram активирован!"
+      rm installer_engine.sh
+    else
+      echo "Не удалось найти wolframscript после установки. Проверьте установку вручную."
+      return 1
+    fi
   echo "Загрузка WolframKernelForJupyter..."
   git clone "$git_url" .
   echo "Регистрация ядра Wolfram в Jupyter ..."
   ./configure-jupyter.wls add
-  rm -rf .wolfram_installation_temp/
+  # rm -rf .wolfram_installation_temp/
   echo "Установка wolfram завершена!"
   return 0
+  fi
 }
 
 function get_list_releases() {
@@ -274,7 +277,7 @@ function welcome() {
 function confirm_julia() {
   read -p "Вы согласны установить Julia? (Y/N) " -n 1 -r
   echo
-  if [[  $REPLY =~ ^[Yy] ]]; then
+  if [[  $REPLY =~ ^[YyДд] ]]; then
      install_julia
   fi
 }
@@ -312,41 +315,23 @@ function install_julia() {
       rm "julia-$version.tar.gz"
       return
     fi
-  else
+  else              
     echo "уже загружено"
   fi
-  if [ ! -d "julia-$version" ]; then
-  echo "Распаковка архива с julia"
-    mkdir -p "julia-$version"
-    tar zxf "julia-$version.tar.gz" -C "julia-$version" --strip-components 1
-  fi
   if [[ "$LATEST" == "1" ]]; then
-    JLVERSION=$(./julia-"$version"/bin/julia -version | cut -d' ' -f3)
-    if [ -d "julia-$JLVERSION" ]; then
-      echo "Внимание: Последняя версия $JLVERSION уже установлена."
-      rm -rf "julia-$version.tar.gz" "julia-$version"
-    else
-      mv "julia-$version.tar.gz" "julia-$JLVERSION.tar.gz"
-      mv "julia-$version" "julia-$JLVERSION"
+    if [ -d "julia-$version" ]; then
+      echo "Внимание: Последняя версия $version уже загружена и распакована."
+      return
     fi
-    version="$JLVERSION"
   fi
+
+  echo "Распаковка архива с julia"
+  mkdir -p "julia-$version"
+  tar zxf "julia-$version.tar.gz" -C "julia-$version" --strip-components 1
 
   major=${version:0:3}
   rm -f "$JULIA_INSTALL"/julia{,-"$major",-"$version"}
   julia="$PWD/julia-$version/bin/julia"
-
-  if [[ "$UPGRADE_CONFIRM" == "1" ]]; then
-    old_major="${JULIA_OLD:0:3}"
-    if [ "$USER" == "root" ] && [ -n "$SUDO_USER" ]; then
-      JULIAENV="/home/$SUDO_USER"
-    else
-      JULIAENV=$HOME
-    fi
-    JULIAENV="${JULIAENV}/.julia/environments"
-    echo "Copying environments in ${JULIAENV} from v${old_major} to v${major}"
-    cp -rp "${JULIAENV}/v${old_major}" "${JULIAENV}/v${major}"
-  fi
   echo "создание символьной ссылки"
   # create symlink
   ln -s "$julia" "$JULIA_INSTALL/julia"
@@ -362,7 +347,7 @@ function install_julia() {
 start_install(){
 welcome
 check_jupyter_install
- confirm_julia
+confirm_julia
 jupyter_install
 scilab_kernel_install
 octave_kernel_install
