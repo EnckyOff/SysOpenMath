@@ -1,5 +1,9 @@
 # SysOpenMath
-![logo.jpg](./src/logo.jpg)
+<picture vertical-align="center">
+<img src="./src/logo.jpg" width="200" height="200">
+</picture>
+
+-------------
 
 SysOpenMath (Система открытой математики, СОМ) - программный продукт, предназначенный для создания и настройки свободной среды обработки математических данных.
 
