@@ -4,9 +4,9 @@ REPL.TerminalMenus.header(m::REPL.TerminalMenus.MultiSelectMenu) = "Нажмит
 
 # Julia packages
 JULIA_PACKAGES = Dict(
-    "Стандартный набор" => ["Plots", "IJulia", "Pluto", "PyCall", "SpecialFunctions", "Images"],
-    "Построение графиков" => ["Makie", "Gadfly", "GLMakie"],
-    "Разработка приложений с графическим интерфейсом" => ["QML"],
+    "Стандартный набор" => ["Plots", "Pluto", "PyCall", "SpecialFunctions", "Images"],
+    "Построение графиков" => ["Makie", "Gadfly", "GLMakie", "Graphics", "PyPlot"],
+    "Разработка приложений с графическим интерфейсом" => ["QML", "GTK"],
     "Дополнительные структуры данных" => ["DataStructures", "StructArrays", "DecisionTree"],
     "Дифференциальные уравнения" => ["DifferentialEquations", "ModelingToolkit"],
     "Символьные вычисления" => ["Symbolics", "SymbolicUtils", "ModelingToolkit"],
@@ -23,9 +23,11 @@ JULIA_PACKAGES = Dict(
 
 # Python Packages
 PYTHON_PACKAGES = Dict(
-    "Стандартный набор" => ["numpy", "pandas", "scikit-learn", "scipy", "sympy"],
+    "Стандартный набор" => ["numpy", "pandas", "scipy", "sympy"],
     "Визуализация" => ["seaborn", "plotly"],
     "Работа с изображениями" => ["opencv-python", "Pillow"],
+    "Математика высокой точности" => ["mpmath"],
+    "Машинное обучение и глубокое обучение" => ["scikit-learn", "torch", "tensorflow", "torchvision", "torchaudio"]
 )
 
 function introduction()
@@ -80,12 +82,18 @@ function install_julia_packages(packages)
         println("Установка Julia-пакета: $package")
         Pkg.add(package)
     end
+    Pkg.add("IJulia")
 end
 
 function install_python_packages(packages)
+    use_pipx_bool = get(ENV, "USE_PIPX", "0") == "1"
     for package in packages
         println("Установка Python-пакета: $package")
-        run(`pipx inject jupyter $package`)
+        if use_pipx_bool
+            run(`pipx inject jupyter $package`)
+        else
+            run(`python3 -m pip install --user $package`)
+        end
     end
 end
 
@@ -114,5 +122,6 @@ function main()
     install_python_packages(python_to_install)
     println("\nУстановка завершена.")
 end
+
 
 main()
