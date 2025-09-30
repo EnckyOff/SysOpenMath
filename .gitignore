@@ -3,6 +3,5 @@ test.sh
 shellcheck
 .vscode
 checkbox.sh
-*.ipynb
 Wolfram*
 wolfram*
