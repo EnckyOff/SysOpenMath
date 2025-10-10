@@ -164,17 +164,19 @@ function wolfram_engine_install(){
       wolframscript -username "$wolfram_id" -password "$wolfram_password"
       echo "wolfram активирован!"
       rm installer_engine.sh
+      echo "Загрузка WolframKernelForJupyter..."
+      git clone "$git_url" .
+      echo "Регистрация ядра Wolfram в Jupyter ..."
+      ./configure-jupyter.wls add
+      # rm -rf .wolfram_installation_temp/
+      echo "Установка wolfram завершена!"
     else
       echo "Не удалось найти wolframscript после установки. Проверьте установку вручную."
       return 1
     fi
-  echo "Загрузка WolframKernelForJupyter..."
-  git clone "$git_url" .
-  echo "Регистрация ядра Wolfram в Jupyter ..."
-  ./configure-jupyter.wls add
-  # rm -rf .wolfram_installation_temp/
-  echo "Установка wolfram завершена!"
-  return 0
+    return 0
+  else 
+    return 0
   fi
 }
 
