@@ -89,6 +89,7 @@ function jupyter_install() {
 function scilab_kernel_install(){
     read -rp "Хотите установить Scilab kernel в Jupyter? (y/n): " reply
     if [[ "$reply" =~ ^[YyДд]$ ]]; then
+      apt install octave
       pipx inject --include-apps --include-deps jupyter scilab_kernel
       PIPX_PATH="$(pipx environment | grep PIPX_LOCAL_VENVS | cut -d= -f2)"
       source "$PIPX_PATH"/jupyter/bin/activate
@@ -116,6 +117,7 @@ function bash_kernel_install(){
 function octave_kernel_install(){
     read -rp "Хотите установить octave kernel в Jupyter? (y/n): " reply   
      if [[ "$reply" =~ ^[Yy]$ ]]; then
+      apt install octave
       pipx inject --include-apps --include-deps jupyter octave_kernel
       PIPX_PATH="$(pipx environment | grep PIPX_LOCAL_VENVS | cut -d= -f2)"
       source "$PIPX_PATH"/jupyter/bin/activate
